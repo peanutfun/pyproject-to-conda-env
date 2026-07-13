@@ -1,0 +1,14 @@
+name: test1
+channels:
+  - nodefaults
+  - conda-forge
+  - foo
+additions:
+  - dep4
+deletions:
+  - dep1
+conversions:
+  dep3: dep3-base
+  opt: arg
+pip-requirements:
+  - dep2
