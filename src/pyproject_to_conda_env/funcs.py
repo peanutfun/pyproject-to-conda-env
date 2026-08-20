@@ -42,7 +42,7 @@ def read_dependencies(
     """Read all dependencies (also optional) and merge them"""
     dependencies: list[str] = pyproj_data["project"]["dependencies"].copy()
 
-    if optional_dependencies:
+    if optional_dependencies and "optional-dependencies" in pyproj_data["project"]:
         if isinstance(optional_dependencies, bool):
             dep_groups = list(pyproj_data["project"]["optional-dependencies"].keys())
         else:
