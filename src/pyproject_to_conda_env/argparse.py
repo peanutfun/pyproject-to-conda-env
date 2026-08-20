@@ -9,7 +9,13 @@ def parse_args():
         description="Transform pyproject.toml dependencies into a conda env file",
     )
     parser.add_argument("pyproject", type=Path, help="Path to the pyproject.toml file")
-    parser.add_argument("transform", type=Path, help="Path to the transform YAML file")
+    parser.add_argument(
+        "--transform",
+        "-t",
+        type=Path,
+        help="Path to the transform YAML file",
+        default=None,
+    )
     parser.add_argument(
         "--output",
         "-o",

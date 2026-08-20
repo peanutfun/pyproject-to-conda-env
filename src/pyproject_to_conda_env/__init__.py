@@ -17,12 +17,29 @@ from .funcs import (
 
 
 def main():
+    # Parse arguments
     args = parse_args()
 
+    # Read pyproject.toml
     pyproject_data = read_pyproject(args.pyproject)
-    transform = read_transform(args.transform)
+
+    # Read transform or use default
+    transform = {
+        "name": "myenv",
+        "channels": [
+            "conda-forge",
+            "nodefaults",
+        ],
+        ADDITIONS: [],
+        DELETIONS: [],
+        CONVERSIONS: {},
+        PIP_REQUIREMENTS: [],
+    }
+    if args.transform is not None:
+        transform = read_transform(args.transform)
     assert_transform(transform)
 
+    # Transformations
     dependencies = read_dependencies(pyproject_data, args.optional)
     dependencies = remove_dependencies(dependencies, transform[DELETIONS])
     dependencies = convert_dependencies(dependencies, transform[CONVERSIONS])
@@ -30,7 +47,7 @@ def main():
         sorted(dependencies), transform[ADDITIONS], transform[PIP_REQUIREMENTS]
     )
 
+    # Output
     write_environment_file(
         dependencies, args.output, transform["name"], transform["channels"]
     )
-
