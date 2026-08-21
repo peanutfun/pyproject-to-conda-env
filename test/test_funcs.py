@@ -213,10 +213,15 @@ class TestReadDependencies:
         with pytest.raises(KeyError, match="nonexistent"):
             read_dependencies(data, ["nonexistent"])
 
-    def test_missing_optional_dependencies_key_with_true(self):
+    def test_no_optional_dependencies_key_with_true(self):
         data = {"project": {"dependencies": ["numpy"]}}
-        with pytest.raises(KeyError, match="optional-dependencies"):
-            read_dependencies(data, True)
+        result = read_dependencies(data, True)
+        assert result == ["numpy"]
+
+    def test_no_optional_dependencies_with_requested(self):
+        data = {"project": {"dependencies": ["numpy"]}}
+        with pytest.raises(RuntimeError, match="No optional dependencies found"):
+            read_dependencies(data, ["dev"])
 
     def test_data_not_mutated(self, data):
         original_list = data["project"]["dependencies"]

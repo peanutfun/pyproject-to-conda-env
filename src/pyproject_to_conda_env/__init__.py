@@ -20,6 +20,17 @@ def main():
     # Parse arguments
     args = parse_args()
 
+    # Check arguments
+    optional = args.optional
+    if args.no_optional:
+        if args.optional:
+            raise RuntimeError(
+                "'--no-optional' contradicts specifying '--optional' dependencies"
+            )
+        optional = False
+    elif not args.optional:
+        optional = True
+
     # Read pyproject.toml
     pyproject_data = read_pyproject(args.pyproject)
 
@@ -40,7 +51,7 @@ def main():
     assert_transform(transform)
 
     # Transformations
-    dependencies = read_dependencies(pyproject_data, args.optional)
+    dependencies = read_dependencies(pyproject_data, optional)
     dependencies = remove_dependencies(dependencies, transform[DELETIONS])
     dependencies = convert_dependencies(dependencies, transform[CONVERSIONS])
     dependencies = add_dependencies(

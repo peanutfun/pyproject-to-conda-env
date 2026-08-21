@@ -29,8 +29,8 @@ def parse_args():
     parser.add_argument(
         "-d",
         "--optional",
-        nargs="*",
-        default=True,
+        action="extend",
+        default=[],
         help="Optional dependencies to include",
     )
     parser.add_argument(
@@ -42,12 +42,6 @@ def parse_args():
 
     # Parse arguments
     args = parser.parse_args()
-
-    # Check arguments
-    if args.optional is not True and args.no_optional:
-        raise RuntimeError(
-            "'--no-optional' contradicts specifying '--optional' dependencies"
-        )
 
     # Return arguments
     return args

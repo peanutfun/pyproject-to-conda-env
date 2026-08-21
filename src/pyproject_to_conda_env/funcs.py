@@ -41,14 +41,21 @@ def read_dependencies(
 ) -> list[str]:
     """Read all dependencies (also optional) and merge them"""
     dependencies: list[str] = pyproj_data["project"]["dependencies"].copy()
+    if not optional_dependencies:
+        return dependencies
 
-    if optional_dependencies and "optional-dependencies" in pyproj_data["project"]:
-        if isinstance(optional_dependencies, bool):
-            dep_groups = list(pyproj_data["project"]["optional-dependencies"].keys())
-        else:
-            dep_groups = optional_dependencies
-        for group in dep_groups:
-            dependencies.extend(pyproj_data["project"]["optional-dependencies"][group])
+    opt_deps = pyproj_data["project"].get("optional-dependencies", {})
+    dep_groups = list(opt_deps.keys())
+    if isinstance(optional_dependencies, list):
+        if not opt_deps:
+            raise RuntimeError("No optional dependencies found in pyproject data")
+        dep_groups = optional_dependencies
+    elif not opt_deps:
+        return dependencies
+
+    # optional_dependencies is True: Take all that are listed
+    for group in dep_groups:
+        dependencies.extend(opt_deps[group])
 
     return dependencies
 
