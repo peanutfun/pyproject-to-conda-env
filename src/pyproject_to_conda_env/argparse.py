@@ -29,9 +29,11 @@ def parse_args():
     parser.add_argument(
         "-d",
         "--optional",
-        action="extend",
+        action="append",
+        nargs="?",
         default=[],
-        help="Optional dependencies to include",
+        const=True,
+        help="Optional dependencies to include. Omit the value to include all.",
     )
     parser.add_argument(
         "-n",

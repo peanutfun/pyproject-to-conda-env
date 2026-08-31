@@ -7,6 +7,7 @@ of the module you shared, e.g. ``from make_environment import ...``).
 """
 
 from pathlib import Path
+import warnings
 
 import pytest
 import yaml
@@ -26,6 +27,8 @@ from pyproject_to_conda_env import (
     remove_dependencies,
     write_environment_file,
 )
+
+from pyproject_to_conda_env.funcs import Requirement
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +174,53 @@ class TestAssertTransform:
 
 
 # ---------------------------------------------------------------------------
+# Requirement
+# ---------------------------------------------------------------------------
+
+
+class TestRequirement:
+    @pytest.fixture(params=[" numpy", "foo_", "foo-bar "])
+    def name(self, request):
+        return request.param
+
+    @pytest.fixture(params=["==", " <=", "> ", " != "])
+    def spec(self, request):
+        return request.param
+
+    @pytest.fixture(params=["2", " 2.1", "v3 "])
+    def version(self, request):
+        return request.param
+
+    def test_reading(self, name, spec, version):
+        req = Requirement(f"{name}{spec}{version}")
+        assert req.name == name.strip()
+        assert req.comp == spec.strip()
+        assert req.version == version.strip()
+
+    def test_reading_no_spec(self, name):
+        req = Requirement(name)
+        assert req.name == name.strip()
+        assert req.comp == ""
+        assert req.version == ""
+
+    def test_to_string(self, name, spec, version):
+        req = Requirement(f"{name}{spec}{version}")
+        assert req.to_string() == "".join(
+            [req for req in [name.strip(), spec.strip(), version.strip()] if req]
+        )
+
+    def test_to_string_no_spec(self, name):
+        req = Requirement(f"{name}")
+        assert req.to_string() == f"{name.strip()}"
+
+    def test_error(self):
+        with pytest.raises(RuntimeError, match="Error parsing"):
+            Requirement("numpy>")
+        with pytest.raises(RuntimeError, match="Error parsing"):
+            Requirement("numpy[foo]")
+
+
+# ---------------------------------------------------------------------------
 # read_dependencies
 # ---------------------------------------------------------------------------
 
@@ -192,7 +242,17 @@ class TestReadDependencies:
         result = read_dependencies(data, False)
         assert result == ["numpy", "pandas"]
 
-    def test_no_optional_dependencies_empty_list(self, data):
+    def test_any_optional_dependencies(self, data):
+        result = read_dependencies(data, [])
+        assert set(result) == {"numpy", "pandas", "pytest", "black", "sphinx"}
+
+    def test_any_optional_dependencies_no_list(self, data):
+        del data["project"]["optional-dependencies"]
+        result = read_dependencies(data, [])
+        assert result == ["numpy", "pandas"]
+
+    def test_any_optional_dependencies_empty_list(self, data):
+        data["project"]["optional-dependencies"] = {}
         result = read_dependencies(data, [])
         assert result == ["numpy", "pandas"]
 
@@ -210,13 +270,20 @@ class TestReadDependencies:
         assert set(result) == {"numpy", "pandas", "pytest", "black", "sphinx"}
 
     def test_unknown_group_raises_keyerror(self, data):
-        with pytest.raises(KeyError, match="nonexistent"):
+        with pytest.raises(
+            RuntimeError, match="Optional dependency not found: nonexistent"
+        ):
             read_dependencies(data, ["nonexistent"])
 
     def test_no_optional_dependencies_key_with_true(self):
         data = {"project": {"dependencies": ["numpy"]}}
-        result = read_dependencies(data, True)
-        assert result == ["numpy"]
+        with pytest.raises(RuntimeError, match="No optional dependencies found"):
+            read_dependencies(data, True)
+
+    def test_empty_optional_dependencies_key_with_true(self):
+        data = {"project": {"dependencies": ["numpy"]}, "optional-dependencies": {}}
+        with pytest.raises(RuntimeError, match="No optional dependencies found"):
+            read_dependencies(data, True)
 
     def test_no_optional_dependencies_with_requested(self):
         data = {"project": {"dependencies": ["numpy"]}}
@@ -282,15 +349,10 @@ class TestRemoveDependencies:
 
 class TestConvertDependencies:
     def test_conversion_table_none_returns_copy(self):
-        deps = ["numpy", "pandas"]
+        deps = ["numpy ", "pandas"]
         result = convert_dependencies(deps, None)
         assert result == deps
         assert result is not deps
-
-    def test_converts_matching_substring(self):
-        deps = ["pytorch", "pandas"]
-        result = convert_dependencies(deps, {"pytorch": "pytorch-cpu"})
-        assert result == ["pytorch-cpu", "pandas"]
 
     def test_converts_with_version_spec_preserved(self):
         deps = ["pytorch==2.0.0"]
@@ -307,11 +369,16 @@ class TestConvertDependencies:
         result = convert_dependencies(deps, {})
         assert result == deps
 
-    def test_first_matching_rule_applied_only(self):
+    def test_iterative(self):
         # dict iteration order == insertion order in modern Python
-        deps = ["foobar"]
-        result = convert_dependencies(deps, {"foo": "AAA", "foobar": "BBB"})
-        assert result == ["AAAbar"]
+        deps = ["foo"]
+        result = convert_dependencies(deps, {"foo": "AAA", "AAA": "BBB"})
+        assert result == ["BBB"]
+
+    def test_does_not_match_substring(self):
+        deps = ["numpy"]
+        result = convert_dependencies(deps, {"py": "foo"})
+        assert result == deps
 
     def test_does_not_mutate_input(self):
         deps = ["pytorch"]
@@ -323,6 +390,18 @@ class TestConvertDependencies:
         result = convert_dependencies(deps, {"a": "b"})
         assert result == deps
         assert result is not deps
+
+    def test_no_match_warning(self):
+        deps = ["foo"]
+        with warnings.catch_warnings(record=True) as ww:
+            warnings.simplefilter("always")
+            convert_dependencies(deps, {"a ": "b", " f": "x"})
+
+        assert len(ww) == 2
+        assert ww[0].category == RuntimeWarning
+        assert str(ww[0].message) == "No match for conversion found: a"
+        assert ww[1].category == RuntimeWarning
+        assert str(ww[1].message) == "No match for conversion found: f"
 
 
 # ---------------------------------------------------------------------------
@@ -369,11 +448,11 @@ class TestAddDependencies:
         result = add_dependencies(deps, None, ["requests-pip-pkg"])
         assert result.count("pip") == 1
 
-    def test_pip_requirements_sorted_in_block(self):
-        deps = ["zeta-pip==1.0", "alpha-pip==2.0"]
-        result = add_dependencies(deps, None, ["pip"])
+    def test_does_not_match_substring(self):
+        deps = ["zeta-foo==1.0", "alpha-foo==2.0"]
+        result = add_dependencies(deps, None, ["foo"])
         pip_block = result[-1]
-        assert pip_block["pip"] == sorted(pip_block["pip"])
+        assert pip_block["pip"] == ["foo"]
 
     def test_additions_and_pip_requirements_together(self):
         deps = ["numpy"]

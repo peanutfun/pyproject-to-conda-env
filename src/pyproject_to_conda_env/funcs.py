@@ -1,6 +1,9 @@
 import tomllib
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
+import re
+import warnings
 
 import yaml
 
@@ -10,6 +13,32 @@ CONVERSIONS = "conversions"
 PIP_REQUIREMENTS = "pip-requirements"
 
 PROJECT_NAME = "pyproject-to-conda-env"
+
+REQUIREMENT_PATTERN = r"^\s*([\w|\-]+)\s*([\=|<|>|!|~]*)\s*([\S]*)\s*$"
+
+
+class Requirement:
+    _regex = re.compile(REQUIREMENT_PATTERN, re.IGNORECASE)
+
+    def __init__(self, requirement_spec: str):
+        """Initialize"""
+        match = self._regex.search(requirement_spec)
+        if not match:
+            raise RuntimeError(f"Invalid requirement spec: '{requirement_spec}'")
+
+        self.name = match.group(1)
+        self.comp = match.group(2)
+        self.version = match.group(3)
+
+        if (self.comp == "" and self.version != "") or (
+            self.comp != "" and self.version == ""
+        ):
+            raise RuntimeError(f"Error parsing requirement: {requirement_spec}")
+
+    def to_string(self) -> str:
+        """Make a string requirement again"""
+        requirement = [req for req in [self.name, self.comp, self.version] if req]
+        return "".join(requirement)
 
 
 def read_pyproject(path: str | Path = "pyproject.toml") -> dict[str, Any]:
@@ -39,23 +68,34 @@ def assert_transform(transform: dict[str, Any]):
 def read_dependencies(
     pyproj_data: dict[str, Any], optional_dependencies: bool | list[str]
 ) -> list[str]:
-    """Read all dependencies (also optional) and merge them"""
+    """Read all dependencies (also optional) and merge them
+    
+    Handling of ``optional_dependencies``:
+    
+    - A list of values: Throw an error if any cannot be found
+    - True: Use all. Throw an error if none can be found
+    - Empty list: Use all that can be found (including none)
+    - False: Use none.
+    """
     dependencies: list[str] = pyproj_data["project"]["dependencies"].copy()
-    if not optional_dependencies:
+    if optional_dependencies is False:
         return dependencies
 
     opt_deps = pyproj_data["project"].get("optional-dependencies", {})
     dep_groups = list(opt_deps.keys())
-    if isinstance(optional_dependencies, list):
+    if optional_dependencies:
         if not opt_deps:
             raise RuntimeError("No optional dependencies found in pyproject data")
-        dep_groups = optional_dependencies
-    elif not opt_deps:
-        return dependencies
+        if optional_dependencies is not True:
+            dep_groups = optional_dependencies
 
-    # optional_dependencies is True: Take all that are listed
+    # Take all that are listed
     for group in dep_groups:
-        dependencies.extend(opt_deps[group])
+        try:
+            dependencies.extend(opt_deps[group])
+        except KeyError as err:
+            if optional_dependencies:
+                raise RuntimeError(f"Optional dependency not found: {group}") from err
 
     return dependencies
 
@@ -65,13 +105,8 @@ def remove_dependencies(dep_list: list[str], deletions: list[str] | None) -> lis
     if deletions is None:
         return dep_list.copy()
 
-    def delete(dependency: str) -> bool:
-        for dep in deletions:
-            if dep in dependency:
-                return True
-        return False
-
-    return [dep for dep in dep_list if not delete(dep)]
+    requirements = [Requirement(dep) for dep in dep_list]
+    return [req.to_string() for req in requirements if req.name not in deletions]
 
 
 def convert_dependencies(
@@ -80,14 +115,19 @@ def convert_dependencies(
     """Convert dependency names"""
     if conversion_table is None:
         return dep_list.copy()
+    
+    requirements = [Requirement(dep) for dep in dep_list]
+    for dep_from, dep_to in conversion_table.items():
+        dep_from = dep_from.strip()
+        matched = False
+        for req in requirements:
+            if req.name == dep_from:
+                req.name = dep_to.strip()
+                matched = True
+        if not matched:
+            warnings.warn(f"No match for conversion found: {dep_from}", RuntimeWarning)
 
-    def convert(dependency: str) -> str:
-        for dep_from, dep_to in conversion_table.items():
-            if dep_from in dependency:
-                return dependency.replace(dep_from, dep_to)
-        return dependency
-
-    return [convert(dep) for dep in dep_list]
+    return [req.to_string() for req in requirements]
 
 
 def add_dependencies(
@@ -104,7 +144,7 @@ def add_dependencies(
 
         def version_given(dependency: str) -> bool:
             for dep_ver in pip_reqs_with_versions:
-                if dependency in dep_ver:
+                if dependency == Requirement(dep_ver).name:
                     return True
             return False
 

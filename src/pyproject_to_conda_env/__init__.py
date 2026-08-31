@@ -1,3 +1,5 @@
+import warnings
+
 from .argparse import parse_args
 from .funcs import (
     assert_transform,
@@ -12,24 +14,26 @@ from .funcs import (
     DELETIONS,
     CONVERSIONS,
     PIP_REQUIREMENTS,
-    PROJECT_NAME,
 )
 
 
 def main():
     # Parse arguments
     args = parse_args()
-
-    # Check arguments
     optional = args.optional
+
+    # Normalize
+    if isinstance(optional, list) and any(opt is True for opt in optional):
+        warnings.warn("Ignoring ")
+        optional = True
+
+    # Check consistency
     if args.no_optional:
-        if args.optional:
+        if optional:
             raise RuntimeError(
                 "'--no-optional' contradicts specifying '--optional' dependencies"
             )
         optional = False
-    elif not args.optional:
-        optional = True
 
     # Read pyproject.toml
     pyproject_data = read_pyproject(args.pyproject)
