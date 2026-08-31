@@ -14,6 +14,7 @@ from .funcs import (
     DELETIONS,
     CONVERSIONS,
     PIP_REQUIREMENTS,
+    PROJECT_NAME
 )
 
 
