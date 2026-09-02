@@ -56,7 +56,7 @@ def main():
     assert_transform(transform)
 
     # Transformations
-    dependencies = read_dependencies(pyproject_data, optional)
+    dependencies = read_dependencies(pyproject_data, optional, args.dependency_group)
     dependencies = remove_dependencies(dependencies, transform[DELETIONS])
     dependencies = convert_dependencies(dependencies, transform[CONVERSIONS])
     dependencies = add_dependencies(

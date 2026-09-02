@@ -1,11 +1,15 @@
+from platform import release
 import tomllib
 from pathlib import Path
 from typing import Any
 from collections.abc import Mapping
-import re
 import warnings
 
 import yaml
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+
+from .dependency_groups import resolve, normalize_group_names
 
 ADDITIONS = "additions"
 DELETIONS = "deletions"
@@ -14,31 +18,12 @@ PIP_REQUIREMENTS = "pip-requirements"
 
 PROJECT_NAME = "pyproject-to-conda-env"
 
-REQUIREMENT_PATTERN = r"^\s*([\w|\-]+)\s*([\=|<|>|!|~]*)\s*([\S]*)\s*$"
 
-
-class Requirement:
-    _regex = re.compile(REQUIREMENT_PATTERN, re.IGNORECASE)
-
-    def __init__(self, requirement_spec: str):
-        """Initialize"""
-        match = self._regex.search(requirement_spec)
-        if not match:
-            raise RuntimeError(f"Invalid requirement spec: '{requirement_spec}'")
-
-        self.name = match.group(1)
-        self.comp = match.group(2)
-        self.version = match.group(3)
-
-        if (self.comp == "" and self.version != "") or (
-            self.comp != "" and self.version == ""
-        ):
-            raise RuntimeError(f"Error parsing requirement: {requirement_spec}")
-
-    def to_string(self) -> str:
-        """Make a string requirement again"""
-        requirement = [req for req in [self.name, self.comp, self.version] if req]
-        return "".join(requirement)
+def relaxed_eq(precise: Requirement, relaxed: str) -> bool:
+    relaxed = relaxed.strip()
+    if canonicalize_name(relaxed) == canonicalize_name(precise.name):
+        return True
+    return precise == Requirement(relaxed)
 
 
 def read_pyproject(path: str | Path = "pyproject.toml") -> dict[str, Any]:
@@ -66,36 +51,45 @@ def assert_transform(transform: dict[str, Any]):
 
 
 def read_dependencies(
-    pyproj_data: dict[str, Any], optional_dependencies: bool | list[str]
+    pyproj_data: dict[str, Any],
+    optional_dependencies: bool | list[str],
+    dependency_groups: list[str] | None = None,
 ) -> list[str]:
     """Read all dependencies (also optional) and merge them
-    
+
     Handling of ``optional_dependencies``:
-    
+
     - A list of values: Throw an error if any cannot be found
     - True: Use all. Throw an error if none can be found
     - Empty list: Use all that can be found (including none)
     - False: Use none.
     """
     dependencies: list[str] = pyproj_data["project"]["dependencies"].copy()
+    if dependency_groups:
+        dep_groups = normalize_group_names(pyproj_data.get("dependency-groups", {}))
+        if not dep_groups:
+            raise LookupError("No dependency groups found")
+        for group in dependency_groups:
+            dependencies.extend(resolve(dep_groups, group))
+
     if optional_dependencies is False:
         return dependencies
 
     opt_deps = pyproj_data["project"].get("optional-dependencies", {})
-    dep_groups = list(opt_deps.keys())
+    opt_dep_groups = list(opt_deps.keys())
     if optional_dependencies:
         if not opt_deps:
             raise RuntimeError("No optional dependencies found in pyproject data")
         if optional_dependencies is not True:
-            dep_groups = optional_dependencies
+            opt_dep_groups = optional_dependencies
 
     # Take all that are listed
-    for group in dep_groups:
+    for group in opt_dep_groups:
         try:
             dependencies.extend(opt_deps[group])
         except KeyError as err:
             if optional_dependencies:
-                raise RuntimeError(f"Optional dependency not found: {group}") from err
+                raise LookupError(f"Optional dependency not found: {group}") from err
 
     return dependencies
 
@@ -106,28 +100,33 @@ def remove_dependencies(dep_list: list[str], deletions: list[str] | None) -> lis
         return dep_list.copy()
 
     requirements = [Requirement(dep) for dep in dep_list]
-    return [req.to_string() for req in requirements if req.name not in deletions]
+    return [
+        str(req)
+        for req in requirements
+        if not any(relaxed_eq(req, dd) for dd in deletions)
+    ]
 
 
+# TODO: Just use find str.replace for conversion?
 def convert_dependencies(
     dep_list: list[str], conversion_table: Mapping[str, str] | None
 ) -> list[str]:
     """Convert dependency names"""
     if conversion_table is None:
         return dep_list.copy()
-    
+
     requirements = [Requirement(dep) for dep in dep_list]
     for dep_from, dep_to in conversion_table.items():
         dep_from = dep_from.strip()
         matched = False
         for req in requirements:
-            if req.name == dep_from:
+            if relaxed_eq(req, dep_from):
                 req.name = dep_to.strip()
                 matched = True
         if not matched:
             warnings.warn(f"No match for conversion found: {dep_from}", RuntimeWarning)
 
-    return [req.to_string() for req in requirements]
+    return [str(req) for req in requirements]
 
 
 def add_dependencies(
@@ -137,6 +136,7 @@ def add_dependencies(
     dep_list = dep_list.copy()
     if additions:
         dep_list.extend(additions)
+        dep_list.sort()
     if pip_requirements:
         # NOTE: Need to keep the deleted entries to preserve version specs
         dep_list_no_pip = remove_dependencies(dep_list, pip_requirements)
@@ -157,6 +157,7 @@ def add_dependencies(
 
         if "pip" not in dep_list:
             dep_list_no_pip.append("pip")
+        dep_list_no_pip.sort()
         dep_list_no_pip.append({"pip": sorted(pip_reqs)})
         dep_list = dep_list_no_pip
     return dep_list

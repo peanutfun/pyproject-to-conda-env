@@ -1,12 +1,25 @@
 import pytest
-from pathlib import Path
 import subprocess
-import sys
 
 import yaml
 from tomlkit import document, table, dumps
 
-from pyproject_to_conda_env import main
+from pyproject_to_conda_env import (
+    ADDITIONS,
+    DELETIONS,
+    CONVERSIONS,
+    PIP_REQUIREMENTS,
+)
+
+
+# ------------------------------ #
+# FIXTURES
+# ------------------------------ #
+
+
+class CommandError(Exception):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 
 @pytest.fixture
@@ -26,9 +39,9 @@ def run_command(tmp_path):
                 cwd=cwd,
             )
         except subprocess.CalledProcessError as err:
-            print(err.output)
-            print(err.stderr)
-            raise
+            print(err.output.decode("utf8"))
+            print(err.stderr.decode("utf8"))
+            raise CommandError(err.stderr.decode("utf8"))
 
     return cmd
 
@@ -51,14 +64,23 @@ def default_outfile(tmp_path):
     return tmp_path / "environment.yml"
 
 
+# --- pyproject.toml fixtures --- #
+
+
 @pytest.fixture
 def pyproject_base():
     pyproj = document()
 
     project = table()
     project["name"] = "test"
-    project["dependencies"] = ["dep1>1.0", "dep2<2.0", "dep3=1.0"]
+    project["dependencies"] = ["dep1>1.0", "dep2<2.0", "dep3==1.0"]
     pyproj["project"] = project
+
+    dep_groups = table()
+    dep_groups["dev"] = [{"include-group": "test"}, "jupyter"]
+    dep_groups["test"] = ["pytest"]
+    dep_groups["coverage"] = ["coverage"]
+    pyproj["dependency-groups"] = dep_groups
 
     return pyproj
 
@@ -95,12 +117,41 @@ def assert_default(default_outfile):
         assert out["dependencies"] == [
             "dep1>1.0",
             "dep2<2.0",
-            "dep3=1.0",
+            "dep3==1.0",
             "opt1<1.0",
             "opt2>1.1",
         ]
 
     return check
+
+
+# --- transform.yml fixtures --- #
+
+
+@pytest.fixture
+def transform_base():
+    return {
+        "name": "test1",
+        "channels": ["foo"],
+        ADDITIONS: ["dep4"],
+        DELETIONS: ["dep1"],
+        CONVERSIONS: {"dep3": "dep3-base", "opt": "arg", "opt1": "arg"},
+        PIP_REQUIREMENTS: ["dep2"],
+    }
+
+
+@pytest.fixture
+def transform(transform_base, tmp_path):
+    transform_path = tmp_path / "transform.yml"
+    content = yaml.dump(transform_base)
+    with open(transform_path, "w") as file:
+        file.writelines(content)
+    return transform_path
+
+
+# ------------------------------ #
+# TESTS
+# ------------------------------ #
 
 
 def test_default(pyproject_file, run_command, assert_default):
@@ -126,7 +177,7 @@ def test_optional_any(pyproject_file_no_ops, run_command, default_outfile):
     assert out["dependencies"] == [
         "dep1>1.0",
         "dep2<2.0",
-        "dep3=1.0",
+        "dep3==1.0",
     ]
 
 
@@ -134,7 +185,7 @@ def test_optional_any(pyproject_file_no_ops, run_command, default_outfile):
 def test_no_optional(pyproject_file, run_command, default_outfile, opt):
     run_command(str(pyproject_file), opt)
     out = load_yaml(default_outfile)
-    assert out["dependencies"] == ["dep1>1.0", "dep2<2.0", "dep3=1.0"]
+    assert out["dependencies"] == ["dep1>1.0", "dep2<2.0", "dep3==1.0"]
 
 
 @pytest.mark.parametrize("opt", [["foo"], ["bar"], ["foo", "bar"]])
@@ -145,11 +196,57 @@ def test_optional_args(pyproject_file, run_command, default_outfile, opt):
     run_command(str(pyproject_file), *args)
     out = load_yaml(default_outfile)
 
-    assert out["dependencies"][:3] == ["dep1>1.0", "dep2<2.0", "dep3=1.0"]
+    assert out["dependencies"][:3] == ["dep1>1.0", "dep2<2.0", "dep3==1.0"]
     assert ("opt1<1.0" in out["dependencies"]) == ("foo" in opt)
     assert ("opt2>1.1" in out["dependencies"]) == ("bar" in opt)
 
 
 def test_optional_error(pyproject_file, run_command):
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(CommandError, match="'--no-optional' contradicts"):
         run_command(str(pyproject_file), "-d", "foo", "-n")
+
+
+def test_default_transform(
+    pyproject_file, run_command, transform, transform_base, default_outfile
+):
+    run_command(str(pyproject_file), "-t", str(transform))
+    out = load_yaml(default_outfile)
+    assert out["name"] == transform_base["name"]
+    assert out["channels"] == transform_base["channels"]
+    assert out["dependencies"] == [
+        "arg<1.0",
+        "dep3-base==1.0",
+        "dep4",
+        "opt2>1.1",
+        "pip",
+        {"pip": ["dep2<2.0"]},
+    ]
+
+
+def test_transform_no_optional(
+    pyproject_file, run_command, transform, transform_base, default_outfile
+):
+    run_command(str(pyproject_file), "-t", str(transform), "-n")
+    out = load_yaml(default_outfile)
+    assert out["name"] == transform_base["name"]
+    assert out["channels"] == transform_base["channels"]
+    assert out["dependencies"] == [
+        "dep3-base==1.0",
+        "dep4",
+        "pip",
+        {"pip": ["dep2<2.0"]},
+    ]
+
+
+def test_dependency_group_recursive(pyproject_file, run_command, default_outfile):
+    run_command(str(pyproject_file), "-g", "dev")
+    out = load_yaml(default_outfile)
+    assert "pytest" in out["dependencies"]
+    assert "jupyter" in out["dependencies"]
+
+
+def test_dependency_group_multiple(pyproject_file, run_command, default_outfile):
+    run_command(str(pyproject_file), "-g", "test", "-g", "coverage")
+    out = load_yaml(default_outfile)
+    assert "pytest" in out["dependencies"]
+    assert "coverage" in out["dependencies"]

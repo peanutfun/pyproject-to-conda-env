@@ -3,15 +3,6 @@ revision = 3
 requires-python = ">=3.12"
 
 [[package]]
-name = "clirunner"
-version = "0.2.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1e/03/dafc1a7e78fb60b8e45f3b93e326c3c60fc991fbadc989b52c13563e45f0/clirunner-0.2.0.tar.gz", hash = "sha256:28081a2ee6b60d39dc3ce7526716d199b23028bf929228d1440bd1928d1ff03f", size = 33305, upload-time = "2025-06-05T04:11:12.529Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/5b/fff666b3f59e1569749ce086fea07deba5820023e1efeebb19943f141b26/clirunner-0.2.0-py2.py3-none-any.whl", hash = "sha256:205357dab5d6fa8b7ddfb01d7cf0c7b302472989524865958e7fa663542c38fc", size = 24742, upload-time = "2025-06-05T04:11:10.965Z" },
-]
-
-[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -135,7 +126,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "clirunner" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "tomlkit" },
@@ -146,7 +136,6 @@ requires-dist = [{ name = "pyyaml", specifier = ">=6.0.3" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "clirunner", specifier = ">=0.2.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "tomlkit", specifier = ">=0.15.1" },

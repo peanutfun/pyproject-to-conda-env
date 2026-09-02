@@ -28,9 +28,6 @@ from pyproject_to_conda_env import (
     write_environment_file,
 )
 
-from pyproject_to_conda_env.funcs import Requirement
-
-
 # ---------------------------------------------------------------------------
 # read_pyproject
 # ---------------------------------------------------------------------------
@@ -174,53 +171,6 @@ class TestAssertTransform:
 
 
 # ---------------------------------------------------------------------------
-# Requirement
-# ---------------------------------------------------------------------------
-
-
-class TestRequirement:
-    @pytest.fixture(params=[" numpy", "foo_", "foo-bar "])
-    def name(self, request):
-        return request.param
-
-    @pytest.fixture(params=["==", " <=", "> ", " != "])
-    def spec(self, request):
-        return request.param
-
-    @pytest.fixture(params=["2", " 2.1", "v3 "])
-    def version(self, request):
-        return request.param
-
-    def test_reading(self, name, spec, version):
-        req = Requirement(f"{name}{spec}{version}")
-        assert req.name == name.strip()
-        assert req.comp == spec.strip()
-        assert req.version == version.strip()
-
-    def test_reading_no_spec(self, name):
-        req = Requirement(name)
-        assert req.name == name.strip()
-        assert req.comp == ""
-        assert req.version == ""
-
-    def test_to_string(self, name, spec, version):
-        req = Requirement(f"{name}{spec}{version}")
-        assert req.to_string() == "".join(
-            [req for req in [name.strip(), spec.strip(), version.strip()] if req]
-        )
-
-    def test_to_string_no_spec(self, name):
-        req = Requirement(f"{name}")
-        assert req.to_string() == f"{name.strip()}"
-
-    def test_error(self):
-        with pytest.raises(RuntimeError, match="Error parsing"):
-            Requirement("numpy>")
-        with pytest.raises(RuntimeError, match="Error parsing"):
-            Requirement("numpy[foo]")
-
-
-# ---------------------------------------------------------------------------
 # read_dependencies
 # ---------------------------------------------------------------------------
 
@@ -235,7 +185,12 @@ class TestReadDependencies:
                     "dev": ["pytest", "black"],
                     "docs": ["sphinx"],
                 },
-            }
+            },
+            "dependency-groups": {
+                "dev": [{"include-group": "test"}, "jupyter"],
+                "test": ["pytest"],
+                "coverage": ["coverage"],
+            },
         }
 
     def test_no_optional_dependencies_false(self, data):
@@ -265,13 +220,42 @@ class TestReadDependencies:
         assert set(result) == {"numpy", "pandas", "pytest", "black"}
         assert "sphinx" not in result
 
-    def test_multiple_specific_groups(self, data):
+    def test_multiple_optional_dependencys(self, data):
         result = read_dependencies(data, ["dev", "docs"])
         assert set(result) == {"numpy", "pandas", "pytest", "black", "sphinx"}
 
+    def test_dependency_groups_recursive(self, data):
+        result = read_dependencies(data, False, ["dev"])
+        assert result == ["numpy", "pandas", "pytest", "jupyter"]
+
+    def test_dependency_groups_multiple(self, data):
+        result = read_dependencies(data, False, ["coverage", "test"])
+        assert result == ["numpy", "pandas", "coverage", "pytest"]
+
+    def test_no_dependency_groups(self, data):
+        del data["dependency-groups"]
+        with pytest.raises(LookupError, match="No dependency groups"):
+            read_dependencies(data, False, ["dev"])
+
+    def test_dependency_group_not_found(self, data):
+        with pytest.raises(LookupError, match="Dependency group 'foo'"):
+            read_dependencies(data, False, ["foo"])
+
+    def test_dependency_group_and_optional_dependencies(self, data):
+        result = read_dependencies(data, True, ["dev"])
+        assert result == [
+            "numpy",
+            "pandas",
+            "pytest",
+            "jupyter",
+            "pytest",
+            "black",
+            "sphinx",
+        ]
+
     def test_unknown_group_raises_keyerror(self, data):
         with pytest.raises(
-            RuntimeError, match="Optional dependency not found: nonexistent"
+            LookupError, match="Optional dependency not found: nonexistent"
         ):
             read_dependencies(data, ["nonexistent"])
 
@@ -308,15 +292,20 @@ class TestRemoveDependencies:
         assert result == deps
         assert result is not deps  # it's a copy
 
-    def test_removes_exact_match(self):
+    def test_removes_match(self):
         deps = ["numpy", "pandas", "scipy"]
         result = remove_dependencies(deps, ["pandas"])
         assert result == ["numpy", "scipy"]
 
-    def test_removes_substring_match(self):
+    def test_removes_name_match(self):
         deps = ["numpy==1.2.3", "pandas>=2.0", "scipy"]
         result = remove_dependencies(deps, ["numpy"])
         assert result == ["pandas>=2.0", "scipy"]
+
+    def test_removes_version_match(self):
+        deps = ["numpy==1.2.3", "pandas>=2.0", "scipy"]
+        result = remove_dependencies(deps, ["numpy>1", " pandas>=2.0"])
+        assert result == ["numpy==1.2.3", "scipy"]
 
     def test_multiple_deletions(self):
         deps = ["numpy", "pandas", "scipy", "requests"]
@@ -357,6 +346,11 @@ class TestConvertDependencies:
     def test_converts_with_version_spec_preserved(self):
         deps = ["pytorch==2.0.0"]
         result = convert_dependencies(deps, {"pytorch": "pytorch-cpu"})
+        assert result == ["pytorch-cpu==2.0.0"]
+
+    def test_matches_spec(self):
+        deps = ["pytorch==2.0.0"]
+        result = convert_dependencies(deps, {"pytorch==2.0.0": "pytorch-cpu"})
         assert result == ["pytorch-cpu==2.0.0"]
 
     def test_no_match_leaves_dependency_unchanged(self):
@@ -419,7 +413,7 @@ class TestAddDependencies:
     def test_additions_only(self):
         deps = ["numpy"]
         result = add_dependencies(deps, ["scipy", "requests"], None)
-        assert result == ["numpy", "scipy", "requests"]
+        assert result == ["numpy", "requests", "scipy"]  # Sorted
 
     def test_empty_additions_list_no_effect(self):
         deps = ["numpy"]
@@ -456,12 +450,12 @@ class TestAddDependencies:
 
     def test_additions_and_pip_requirements_together(self):
         deps = ["numpy"]
-        result = add_dependencies(deps, ["scipy"], ["scipy"])
+        result = add_dependencies(deps, ["scipy"], ["scipy", "foo"])
         # scipy was added then moved into the pip block
         assert "scipy" not in [dep for dep in result if isinstance(dep, str)]
         assert "pip" in result
         pip_block = result[-1]
-        assert pip_block == {"pip": ["scipy"]}
+        assert pip_block == {"pip": ["foo", "scipy"]}  # Sorted
 
     def test_does_not_mutate_input(self):
         deps = ["numpy"]
