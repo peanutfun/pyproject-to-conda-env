@@ -1,0 +1,13 @@
+channels:
+  - nodefaults
+  - conda-forge
+  - foo
+dependencies:
+  - arg1<1.0
+  - arg2>1.1
+  - dep3-base=1.0
+  - dep4
+  - pip
+  - pip:
+    - dep2<2.0
+name: test1

@@ -1,0 +1,26 @@
+[project]
+name = "pyproject-to-conda-env"
+version = "0.1.0"
+description = "Compile a conda environment file from a pyproject.toml"
+readme = "README.md"
+authors = [
+    { name = "Lukas Riedel", email = "34276446+peanutfun@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "tomlkit>=0.15.1",
+]
+
+[project.scripts]
+pyproject-to-conda-env = "pyproject_to_conda_env:main"
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"

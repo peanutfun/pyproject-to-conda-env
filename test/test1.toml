@@ -1,0 +1,16 @@
+[project]
+name = "test1"
+
+dependencies = [
+    "dep1>1.0",
+    "dep2<2.0",
+    "dep3=1.0",
+]
+
+[project.optional-dependencies]
+foo = [
+    "opt1<1.0",
+]
+bar = [
+    "opt2>1.1"
+]
