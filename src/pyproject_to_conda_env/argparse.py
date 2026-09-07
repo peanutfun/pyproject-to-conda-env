@@ -5,7 +5,7 @@ from pathlib import Path
 def parse_args():
     """Parse arguments"""
     parser = argparse.ArgumentParser(
-        prog="pyproject_to_conda_env",
+        prog="pyproject-to-conda-env",
         description="Transform pyproject.toml dependencies into a conda env file",
     )
     parser.add_argument(
