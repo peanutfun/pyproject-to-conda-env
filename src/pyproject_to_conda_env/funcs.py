@@ -1,15 +1,14 @@
-from platform import release
 import tomllib
+import warnings
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping
-import warnings
 
 import yaml
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-from .dependency_groups import resolve, normalize_group_names
+from .dependency_groups import normalize_group_names, resolve
 
 ADDITIONS = "additions"
 DELETIONS = "deletions"
@@ -50,6 +49,7 @@ def assert_transform(transform: dict[str, Any]):
     assert PIP_REQUIREMENTS in transform
 
 
+# ruff: ignore[C901]
 def read_dependencies(
     pyproj_data: dict[str, Any],
     optional_dependencies: bool | list[str],
@@ -107,7 +107,6 @@ def remove_dependencies(dep_list: list[str], deletions: list[str] | None) -> lis
     ]
 
 
-# TODO: Just use find str.replace for conversion?
 def convert_dependencies(
     dep_list: list[str], conversion_table: Mapping[str, str] | None
 ) -> list[str]:
@@ -117,14 +116,16 @@ def convert_dependencies(
 
     requirements = [Requirement(dep) for dep in dep_list]
     for dep_from, dep_to in conversion_table.items():
-        dep_from = dep_from.strip()
+        dep_from_str = dep_from.strip()
         matched = False
         for req in requirements:
-            if relaxed_eq(req, dep_from):
+            if relaxed_eq(req, dep_from_str):
                 req.name = dep_to.strip()
                 matched = True
         if not matched:
-            warnings.warn(f"No match for conversion found: {dep_from}", RuntimeWarning)
+            warnings.warn(
+                f"No match for conversion found: {dep_from_str}", RuntimeWarning
+            )
 
     return [str(req) for req in requirements]
 

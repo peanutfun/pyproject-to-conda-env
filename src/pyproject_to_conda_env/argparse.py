@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument(
         "-n",
         "--no-optional",
-        action="store_true", 
+        action="store_true",
         help="Do not include optional dependencies",
     )
     parser.add_argument(

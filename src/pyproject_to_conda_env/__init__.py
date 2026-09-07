@@ -2,19 +2,19 @@ import warnings
 
 from .argparse import parse_args
 from .funcs import (
+    ADDITIONS,
+    CONVERSIONS,
+    DELETIONS,
+    PIP_REQUIREMENTS,
+    PROJECT_NAME,
+    add_dependencies,
     assert_transform,
+    convert_dependencies,
+    read_dependencies,
     read_pyproject,
     read_transform,
-    read_dependencies,
-    add_dependencies,
     remove_dependencies,
-    convert_dependencies,
     write_environment_file,
-    ADDITIONS,
-    DELETIONS,
-    CONVERSIONS,
-    PIP_REQUIREMENTS,
-    PROJECT_NAME
 )
 
 
@@ -67,3 +67,21 @@ def main():
     write_environment_file(
         dependencies, args.output, transform["name"], transform["channels"]
     )
+
+
+__all__ = [
+    "ADDITIONS",
+    "CONVERSIONS",
+    "DELETIONS",
+    "PIP_REQUIREMENTS",
+    "PROJECT_NAME",
+    "add_dependencies",
+    "assert_transform",
+    "convert_dependencies",
+    "read_dependencies",
+    "read_pyproject",
+    "read_transform",
+    "remove_dependencies",
+    "write_environment_file",
+    "main",
+]

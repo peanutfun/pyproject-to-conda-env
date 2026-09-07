@@ -1,16 +1,15 @@
-import pytest
 import subprocess
 
+import pytest
 import yaml
-from tomlkit import document, table, dumps
+from tomlkit import document, dumps, table
 
 from pyproject_to_conda_env import (
     ADDITIONS,
-    DELETIONS,
     CONVERSIONS,
+    DELETIONS,
     PIP_REQUIREMENTS,
 )
-
 
 # ------------------------------ #
 # FIXTURES
