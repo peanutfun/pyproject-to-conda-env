@@ -1,0 +1,10 @@
+- id: pyproject_to_conda_env
+  name: pyproject_to_conda_env
+  description: "Automatically compile an environment.yml from a pyproject.toml"
+  entry: pyproject-to-conda-env
+  language: python
+  files: ^(pyproject\.toml|environment\.yml)$
+  args: []
+  pass_filenames: false
+  additional_dependencies: []
+  minimum_pre_commit_version: "2.9.2"

@@ -1,0 +1,27 @@
+name: CI
+
+# Execute this for every push
+on: [push]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout repo
+        uses: actions/checkout@v6
+      -
+        name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip' # caching pip dependencies
+      -
+        name: Install dependencies
+        run: |
+          pip install -e ./
+          pip install --group dev
+      -
+        name: Run unit tests
+        run: |
+          pytest --cov=pyproject_to_conda_env
